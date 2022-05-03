@@ -119,4 +119,28 @@ FLASK_ENV=development
 ```bash
 $ pipenv install watchdog --dev
 ```
--dev声明了这个包只在开发时被用到。  
+-dev声明了这个包只在开发时被用到。
+
+## 使用flask shell启动Python Shell
+```
+D:\workspace\helloflask\demos\hello> flask shell
+Python 3.8.2 (tags/v3.8.2:7b3ab59, Feb 25 2020, 22:45:29) [MSC v.1916 32 bit (Intel)] on win32
+App: app [development]
+Instance: D:\workspace\helloflask\demos\hello\instance
+>>>
+```
+
+## 自定义flask命令
+除了flask run, flask shell等命令外，还可以在app.py中通过函数创建flask命令。  
+```python
+# custom flask cli command
+@app.cli.command()
+def hello():
+    """Just say hello."""
+    click.echo('Hello, Human!')
+```
+函数的名称即为命令名称，通过flask hello来触发函数。
+```
+D:\workspace\helloflask\demos\hello> flask hello
+Hello, Human!
+```
