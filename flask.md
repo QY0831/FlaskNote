@@ -4,10 +4,20 @@ Start learning Flask :)
 
 # 安装
 pipenv: 基于pip的Python包管理工具  
-安装pipenv：pip install pipenv  
-pipenv install：在当前工作目录创建虚拟环境, 还会在当前目录下创建Pipfile, Pipfile.lock文件，前者记录依赖包列表，后者记录固定版本的详细依赖包列表。当我们使用pipenv更新/创建/删除依赖包时，这两个文件会自动更新。这种方式代替了传统的pip+requirements.txt方式，requirements.txt需要手动维护。
+安装pipenv：
+```
+pip install pipenv  
+```
+新建虚拟环境：  
+```
+pipenv install
+```
+在当前工作目录创建虚拟环境, 还会在当前目录下创建Pipfile, Pipfile.lock文件，前者记录依赖包列表，后者记录固定版本的详细依赖包列表。当我们使用pipenv更新/创建/删除依赖包时，这两个文件会自动更新。这种方式代替了传统的pip+requirements.txt方式，requirements.txt需要手动维护。
 
-pipenv shell：激活虚拟环境
+激活虚拟环境:
+```
+pipenv shell
+```
 
 ![p1](p1.png)
 
@@ -68,4 +78,45 @@ return '<h1>Hello, %s!</h1>' % name
 # 启动Flask
 ![p2](p2.png)
 flask run命令默认监听 127.0.0.1:5000 地址。  
-![p3](p3.png)
+![p3](p3.png)  
+使用flask run命令前，需要提供程序所在位置，flask会自动从两个位置寻找：  
+ - 当前目录下寻找app.py和wsgy.py，并从中寻找app或application对象
+ - 从环境变量FLASK_APP对应的值寻找名为app或application的程序实例  
+
+当前使用的app对象就在app.py，所以flask通过第一种方法能探测到；如果我们使用的是别的名字，如hello.py，那就需要在环境变量设置FLASK_APP。  
+Linux:
+```bash
+$ export FLASK_APP=hello
+```
+Windows:
+```
+> set FLASK_APP=hello
+```
+
+为了避免每次重启都需要重新设置FLASK_APP环境变量，或者在开发多个Flask程序需要切换环境变量，可以使用pythondotenv
+管理项目的环境变量。  
+```
+pipenv install python-dotenv
+```
+在项目根目录创建两个文件，.env和.flaskenv。  
+.env: 存储敏感信息环境变量，如email账户密码。  
+.flaskenv：存储公共环境变量，如FLASK_APP。
+
+Flask加载环境变量的优先级：  
+手动设置的环境变量>.env中设置的环境变量>.flaskenv设置的环境变量
+
+## 设置运行环境
+为了区分production和development环境，Flask提供了一个FLASK_ENV环境变量，默认为production。  
+在开发时，可以在.flaskenv文件中将它设置为development。
+```
+FLASK_ENV=development
+```
+开发模式下，调试模式（Debug Mode）将被开启，这时执行flask run启动程序会自动激活Werkzeug内置的调试器（debugger）和重载器 （reloader）。  
+调试器非常强大，当程序出错时，我们可以在网页上看到详细的错误追踪信息。  
+重载器的作用就是监测文件变动，然后重新启动开发服务器。  
+默认会使用Werkzeug内置的stat重载器，它的缺点是耗电较严重，而且准确性一般。
+为了获得更优秀的体验，我们可以安装另一个用于监测文件变动的Python库Watchdog：
+```bash
+$ pipenv install watchdog --dev
+```
+-dev声明了这个包只在开发时被用到。  
