@@ -144,3 +144,70 @@ def hello():
 D:\workspace\helloflask\demos\hello> flask hello
 Hello, Human!
 ```
+
+# Flask & HTTP
+## Request 对象
+请求URL和报文中的其他信息都可以通过Flask的Request对象提供的属性和方法获取。
+URL: http://helloflask.com/hello?name=Grey
+![p4](p4.png)  
+```python
+from flask import Flask, request
+app = Flask(__name__)
+@app.route('/hello')
+def hello():
+    name = request.args.get('name', 'Flask')  # 通过request对象得到传入的name，若未传入，默认值为Flask
+    # 使用request.args.get而不是args['name']的原因是
+    # 如果args中没有name这个key，那么会返回HTTP 400错误响应(Bad Request，表示请求无效)，而不是抛出KeyError异常
+    # 为了避免这个错误，应该使用get方法
+    return '<h1>Hello, %s!<h1>' % name
+```
+## Flask 处理请求
+当前运行的app实例会存储一张路由表(app.url_map)，其中定义了URL规则和视图函数的映射关系。
+当请求发来后，Flask会根据请求报文中的URL(path部分)来尝试与这个表中的所有URL规则进行匹配，调用匹配成功的视图函数。
+如果没有找到匹配的URL规则，说明程序中没有处理这个URL的视图函数，Flask会自动返回404错误响应(Not Found，表示资源未找到)。  
+
+使用flask routes命令可以查看程序中定义的所有路由，这个列表由app.url_map解析得到：  
+```
+$ flask routes
+Endpoint  Methods  Rule
+--------  -------  -----------------------
+hello     GET
+go_back   GET
+hi        GET
+...
+static GET
+/hello
+/goback/<int:age>
+/hi
+/static/<path:filename>
+```
+
+### 设置监听的HTTP方法
+在app.route()装饰器的methods参数可以设置监听方法：  
+```python
+@app.route('/hello', methods=['GET', 'POST'])
+def hello():
+   return '<h1>Hello, Flask!</h1>'
+```
+如果使用了不被允许的监听方法，访问该URL时视图函数会返回405错误响应（Method Not Allowed，表示请求方法不允许）。  
+
+### URL处理
+app.route()装饰器中可以对传入的变量进行类型转化，当变量无法转化时，会返回404错误响应，间接验证了传入变量类型是否正确。  
+![p5](p5.png) 
+```python
+@app.route('goback/<int:year>')
+def go_back(year):
+   return '<p>Welcome to %d!</p>' % (2018 - year)
+```
+any 提供了一个可选的value列表：  
+```python
+@app.route('/colors/<any(blue, white, red):color>')
+def three_colors(color):
+    ...
+```
+可以使用格式化字符串的方式来设置这个列表，用%s或format都可以：  
+```python
+colors = ['blue', 'white', 'red']
+@app.route('/colors/<any(%s):color>' % str(colors)[1:-1])
+...
+```
