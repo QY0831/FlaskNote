@@ -22,10 +22,14 @@ pipenv shell
 ![p1](p1.png)
 
 安装flask:  
+```
 pipenv install flask  
+```
 
-更新flask:  
+更新flask:
+```
 pipenv update flask  
+```
 
 # 最小的flask app
 ```python
@@ -332,5 +336,13 @@ from flask import Flask, request
 def hello():
    name = request.args.get('name')
    if name is None:
-      name = request.cookies.get('name', 'Human') # 从Cookie中获取name值 return '<h1>Hello, %s</h1>' % name
+      name = request.cookies.get('name', 'Human') # 从Cookie中获取name值 
+   return '<h1>Hello, %s</h1>' % name
 ```
+
+### session
+如果直接把认证信息以明文的方式存储在Cookie里，那么恶意用户就可以通过伪造cookie的 内容来获得对网站的权限，冒用别人的账户。
+为了避免这个问题，我们需要对敏感的Cookie内容进行加密。
+在Flask中，session对象用来加密Cookie。默认情况下，它会把数据存储在浏览器上一个名为session的cookie里。
+
+
