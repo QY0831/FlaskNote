@@ -343,6 +343,74 @@ def hello():
 ### session
 如果直接把认证信息以明文的方式存储在Cookie里，那么恶意用户就可以通过伪造cookie的 内容来获得对网站的权限，冒用别人的账户。
 为了避免这个问题，我们需要对敏感的Cookie内容进行加密。
-在Flask中，session对象用来加密Cookie。默认情况下，它会把数据存储在浏览器上一个名为session的cookie里。
+在Flask中，session对象用来加密Cookie。默认情况下，它会把数据存储在浏览器上一个名为session的cookie里。  
 
-
+#### 设置密钥
+session通过密钥对数据进行签名以加密数据。  
+程序的密钥可以通过Flask.secret_key属性或配置变量SECRET_KEY设置，比如：
+```python
+app.secret_key = 'secret string'
+```
+更安全的做法是把密钥写进系统环境变量（在命令行中使用export或set命令），或是保存在.env文件中：
+```text
+SECRET_KEY=secret string
+```
+然后在程序脚本中使用os模块提供的getenv（）方法获取：
+```python
+import os
+# ...
+app.secret_key = os.getenv('SECRET_KEY', 'secret string')
+```
+我们可以在getenv（）方法中添加第二个参数，作为没有获取到对应环境变量时使用的默认值。
+这里的密钥只是示例。在生产环境中，为了安全考虑，你必须使用随机生成的密钥。
+#### 模拟用户认证
+```python
+from flask import redirect, session, url_for
+@app.route('/login')
+def login():
+    session['logged_in'] = True # 写入session
+    return redirect(url_for('hello'))
+```
+用户登入，当我们使用session对象添加cookie时，数据会使用程序的密钥对其进行签名，加密后的数据存储在一块名为session的cookie里。  
+当支持用户登录后，我们就可以根据用户的认证状态分别显示不同的内容。在login视图的最后，我们将程序重定向到hello视图.
+```python
+from flask import request, session
+@app.route('/')
+@app.route('/hello')
+def hello():
+    name = request.args.get('name')
+    if name is None:
+    name = request.cookies.get('name', 'Human')
+    response = '<h1>Hello, %s!</h1>' % name
+    # 根据用户认证状态返回不同的内容
+    if 'logged_in' in session:
+        response += '[Authenticated]'
+    else:
+        response += '[Not Authenticated]'
+    return response
+```
+session中的数据可以像字典一样通过键读取，或是使用get（）方法。  
+这里我们只是判断session中是否包含logged_in键，如果有则表示用户已经登录。通过判断用户的认证状态，我们在返回的响应中添加一行表示认证状态的信息：
+如果用户已经登录，显示[Authenticated]；否则显示[Not authenticated]。  
+程序中的某些资源仅提供给登入的用户，比如管理后台，这时我们就可以通过判断session是否存在logged-in键来判断用户是否认证，比如admin视图：
+```python
+from flask import session, abort
+@app.route('/admin')
+def admin():
+    if 'logged_in' not in session:
+        abort(403)
+    return 'Welcome to admin page.'
+```
+通过判断logged_in是否在session中，我们可以实现：如果用户已经认证，会返回一行提示文字，否则会返回403错误响应。  
+登出用户的logout视图也非常简单，登出账户对应的实际操作其实就是把代表用户认证的logged-in cookie删除，这通过session对象的pop方法实现:
+```python
+from flask import session
+@app.route('/logout')
+def logout():
+    if 'logged_in' in session:
+        session.pop('logged_in')
+    return redirect(url_for('hello'))
+```
+默认情况下，session cookie会在用户关闭浏览器时删除。  
+尽管session对象会对Cookie进行签名并加密，但这种方式仅能够确保session的内容不会被篡改，加密后的数据借助工具仍然可以轻易读取（即使不知道密钥）。
+因此，绝对不能在session中存储敏感信息，比如用户密码。  
