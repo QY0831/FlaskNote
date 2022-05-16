@@ -414,3 +414,224 @@ def logout():
 默认情况下，session cookie会在用户关闭浏览器时删除。  
 尽管session对象会对Cookie进行签名并加密，但这种方式仅能够确保session的内容不会被篡改，加密后的数据借助工具仍然可以轻易读取（即使不知道密钥）。
 因此，绝对不能在session中存储敏感信息，比如用户密码。  
+
+## Flask上下文
+Flask中有两种上下文，程序上下文(application context)和请求上下文(request context)。  
+为了方便获取这两种上下文环境中存储的信息，Flask提供了四个上下文全局变量。
+ - current_app: 指向处理请求的当前程序实例。
+ - g: 替代Python的全局对象用法、确保仅在当前请求中可用。用于存储全局数据，每次请求都会重设。
+ - request：封装客户端发出的请求报文数据。
+ - session：用于记住请求之间的数据，通过签名的Cookie实现。
+
+
+在前面的示例中，我们并没有传递这个参数，而是直接从Flask导入一个全局的request对象，
+然后在视图函数里直接调用request的属性获取数据。
+你一定好奇，我们在全局导入时request只是一个普通的Python对象，为什么在处理请求时，
+视图函数里的request就会自动包含对应请求的数据?
+这是因为Flask会在每个请求产生后自动激活当前请求的上下文，激活请求上下文后，request被临时设为全局可访问。
+而当每个请求结束后，Flask就销毁对应的请求上下文。  
+
+在多线程服务器中，在同一时间可能会有多个请求在处理。
+假设有三个客户端同时向服务器发送请求，这时每个请求都有各自不同的请求报文，所以请求对象也必然是不同的。
+因此，请求对象只在各自的线程内是全局的。Flask通过本地线程(thread local)技术将请求对象在特定 的线程和请求中全局可访问。  
+
+在不同的视图函数中，request对象都表示和视图函数对应的请求，也就是当前请求(current request)。
+而程序也会有多个程序实例的情况，为了能获取对应的程序实例，而不是固定的某一个程序实例，我们就需要使用current_app变量。
+
+因为g存储在程序上下文中，而程序上下文会随着每一个请求的进入而激活，随着每一个请求的处理完毕而销毁，所以每次请求都会重设这个值。
+我们通常会使用它结合请求钩子来保存每个请求处理前所需要的全局变量，比如当前登入的用户对象，数据库连接等。
+在前面的示例中，我们在hello视图中从查询字符串获取name的值，如果每一个视图都需要这个值，那么就要在每个视图重复这行代码。
+借助g我们可以将这个操作移动到before_request处理函数中执行，然后保存到g的任意属性上:
+```python
+from flask import g
+@app.before_request
+def get_name():
+   g.name = request.args.get('name')
+```
+设置这个函数后，在其他视图中可以直接使用g.name获取对应的值。
+另外，g也支持使用类似字典的get()、pop()以及setdefault() 方法进行操作。
+
+### 激活上下文
+在下面这些情况下，Flask会自动帮我们激活程序上下文:
+ - 当我们使用flask run命令启动程序时。 
+ - 使用旧的app.run()方法启动程序时。 
+ - 执行使用@app.cli.command()装饰器注册的flask命令时。 
+ - 使用flask shell命令启动Python Shell时。
+
+当请求进入时，Flask会自动激活请求上下文，这时我们可以使用request和session变量。
+另外，当请求上下文被激活时，程序上下文也被自动激活。
+当请求处理完毕后，请求上下文和程序上下文也会自动销毁。也就是说，在请求处理时这两者拥有相同的生命周期。
+
+### 上下文钩子
+Flask也为上下文提供了一个teardown_appcontext钩子，使用它注册的回调函数会在程序上下文被销毁时调用，
+而且通常也会在请求上下文被销毁时调用。比如，你需要在每个请求处理结束后销毁数据库连接:
+```python
+@app.teardown_appcontext
+def teardown_db(exception):
+   ...
+   db.close()
+```
+
+## HTTP进阶实践
+### 重定向回上一个页面
+在前面的示例程序中，我们使用redirect()函数生成重定向响应。 比如，在login视图中，登入用户后我们将用户重定向到/hello页面。
+在复杂的应用场景下，我们需要在用户访问某个URL后重定向到上一个页面。
+最常见的情况是，用户单击某个需要登录才能访问的链接，这时程序会重定向到登录页面，
+当用户登录后合理的行为是重定向到用户登录前浏览的页面，以便用户执行未完成的操作，而不是直接重定向到主页。
+```python
+# redirect to last page
+@app.route('/foo')
+def foo():
+    return '<h1>Foo page</h1><a href="%s">Do something and redirect</a>' \
+           % url_for('do_something')
+
+
+@app.route('/bar')
+def bar():
+    return '<h1>Bar page</h1><a href="%s">Do something and redirect</a>' \
+           % url_for('do_something')
+```
+在这两个页面中，我们都添加了一个指向do_something视图的链接。
+```python
+@app.route('/do_something')
+def do_something():
+   # do something
+   return redirect(url_for('hello'))
+```
+我们希望这个视图在执行完相关操作后能够重定向回上一个页面，而不是固定的/hello页面。
+也就是说，如果在Foo页面上单击链接，我们希望被重定向回Foo页面;如果在Bar页面上单击链接，我们则希望返回到Bar页面。
+
+1. 获取上一个页面的URL
+要重定向回上一个页面，最关键的是获取上一个页面的URL。上一个页面的URL一般可以通过两种方式获取:  
+#### HTTP referer
+HTTP referer(起源为referrer在HTTP规范中的错误拼写)是一个用 来记录请求发源地址的HTTP首部字段(HTTP_REFERER)，即访问来源。
+当用户在某个站点单击链接，浏览器向新链接所在的服务器发起请求，请求的数据中包含的HTTP_REFERER字段记录了用户所在的原站点URL。
+这个值通常会用来追踪用户，比如记录用户进入程序的外部站点， 以此来更有针对性地进行营销。
+在Flask中，referer的值可以通过请求对象的referrer属性获取，即request.referrer(正确拼写形式)。  
+现在，do_something视图的返回值可以这样编写:
+```python
+return redirect(request.referrer)
+```
+但是在很多种情况下，referrer字段会是空值，比如用户在浏览器的地址栏输入URL，
+或是用户出于保护隐私的考虑使用了防火墙软件或使用浏览器设置自动清除或修改了referrer字段。
+我们需要添加一个备选项:
+```python
+return redirect(request.referrer or url_for('hello'))
+```
+#### 查询参数
+另一种更常见的方式是在URL中手动加入包含当前页面URL的查询参数，这个查询参数一般命名为next。
+下面在foo和bar视图的返回值中的URL后添加next参数：
+```python
+# redirect to last page
+@app.route('/foo')
+def foo():
+    return '<h1>Foo page</h1><a href="%s">Do something and redirect</a>' \
+           % url_for('do_something', next=request.full_path)
+
+
+@app.route('/bar')
+def bar():
+    return '<h1>Bar page</h1><a href="%s">Do something and redirect</a>' \
+           % url_for('do_something', next=request.full_path)
+```
+这里使用request.full_path获取当前页面的完整路径。在do_something视图中，我们获取这个next值，然后重定向到对应的路径:
+```python
+return redirect(request.args.get('next', url_for('hello')))
+```
+为了覆盖更全面，我们可以将这两种方式搭配起来一起使用:首先获取next参数，如果为空就尝试获取referer，如果仍然为空，
+那么就重定向到默认的hello视图。因为在不同视图执行这部分操作的代码完全相同，我们可以创建一个通用的redirect_back()函数:
+```python
+def redirect_back(default='hello', **kwargs):
+    for target in request.args.get('next'), request.referrer:
+        if not target:
+            continue
+    return redirect(url_for(default, **kwargs))
+```
+通过设置默认值，我们可以在referer和next为空的情况下重定向到默认的视图。在do_something视图中使用这个函数的示例如下所示:
+```python
+@app.route('/do_something_and_redirect')
+def do_something():
+   # do something
+   return redirect_back()
+```
+2. 对URL进行安全验证
+确保URL安全的关键就是判断URL是否属于程序内部，我们创建了一个URL验证函数is_safe_url()，用来验证next变量值是否属于程序内部URL。
+```python
+from urlparse import urlparse, urljoin # Python3需要从urllib.parse导入 from flask import request
+def is_safe_url(target):
+   ref_url = urlparse(request.host_url)
+   test_url = urlparse(urljoin(request.host_url, target))
+   return test_url.scheme in ('http', 'https') and \
+          ref_url.netloc == test_url.netloc
+```
+这个函数接收目标URL作为参数，并通过request.host_url获取程序内的主机URL，然后使用urljoin()函数将目标URL转换为绝对URL。 
+接着，分别使用urlparse模块提供的urlparse()函数解析两个URL，最后对目标URL的URL模式和主机地址进行验证，
+确保只有属于程序内部的URL才会被返回。在执行重定向回上一个页面的redirect_back()函 数中，我们使用is_safe_url()验证next和referer的值:
+```python
+def redirect_back(default='hello', **kwargs):
+   for target in request.args.get('next'), request.referrer:
+       if not target:
+           continue
+       if is_safe_url(target):
+           return redirect(target)
+   return redirect(url_for(default, **kwargs))
+```
+
+### 使用AJAX技术发送异步请求
+AJAX指异步Javascript和XML(Asynchronous JavaScript And XML)，它不是编程语言或通信协议，而是一系列技术的组合体。
+简单来说，AJAX基于XMLHttpRequest让我们可以在不重载页面的情况下和服务器进行数据交换。
+加上JavaScript和DOM(Document Object Model，文档对象模型)，我们就可以在接收到响应数据后局部更新页面。
+而XML指的则是数据的交互格式，也可以是纯文本(Plain Text)、HTML或JSON。  
+jQuery是流行的JavaScript库，它包装了JavaScript，让我们通过更简单的方式编写JavaScript代码。
+对于AJAX，它提供了多个相关的方法，使用它可以很方便地实现AJAX操作。  
+对于处理AJAX请求的视图函数来说，我们不会返回完整的HTML响应，这时一般会返回局部数据，常见的三种类型如下所示:
+1. 纯文本或局部HTML模板
+纯文本可以在JavaScript用来直接替换页面中的文本值，而局部HTML则可以直接到插入页面中，比如返回评论列表:
+```python
+@app.route('/comments/<int:post_id>')
+def get_comments(post_id):
+   ...
+   return render_template('comments.html')
+```
+2. JSON数据
+```python
+@app.route('/profile/<int:user_id>')
+def get_profile(user_id):
+   ...
+   return jsonify(username=username, bio=bio)
+```
+3. 空值
+```python
+@app.route('/post/delete/<int:post_id>', methods=['DELETE'])
+def delete_post(post_id):
+   ...
+   return '', 204
+```
+4. 异步加载长文章
+在示例程序的对应页面中，我们将显示一篇很长的虚拟文章，文章正文下方有一个“加载更多”按钮，当加载按钮被单击时， 
+会发送一个AJAX请求获取文章的更多内容并直接动态插入到文章下方。
+```python
+from jinja2.utils import generate_lorem_ipsum
+@app.route('/post')
+def show_post():
+    post_body = generate_lorem_ipsum(n=2)
+# 生成两段随机文本
+    return '''
+    <h1>A very long post</h1>
+    <div class="body">%s</div>
+    <button id="load">Load More</button>
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script type="text/javascript">
+    $(function() {
+    }) })
+    $('#load').click(function() {
+        $.ajax({
+            url: '/more',
+            type: 'get',
+            success: function(data){
+    // 目标URL
+    // 请求方法
+    // 返回2XX响应后触发的回调函数
+    } })
+    </script>''' % post_body
+```
