@@ -1271,5 +1271,9 @@ def upload():
        {{ form.submit }}
 </form>
 ```
+当表单中包含文件上传字段时（即type属性为file的input标签），需要将表单的enctype属性设为"multipart/form-data"，
+这会告诉浏览器将上传数据发送到服务器，否则仅会把文件名作为表单数据提交。  
 
+#### 处理上传文件
+和普通的表单数据不同，当包含上传文件字段的表单提交后，上传的文件需要在请求对象的files属性（request.files）中获取。
 
