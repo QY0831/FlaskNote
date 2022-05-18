@@ -1276,4 +1276,365 @@ def upload():
 
 #### 处理上传文件
 和普通的表单数据不同，当包含上传文件字段的表单提交后，上传的文件需要在请求对象的files属性（request.files）中获取。
+上传的文件会被Flask解析为Werkzeug中的FileStorage对象 (werkzeug.datastructures.FileStorage)。
+当手动处理时，我们需要使用文件上传字段的name属性值作为键获取对应的文件对象。
+```python
+request.files.get('photo')
+```
+当使用Flask-WTF时，它会自动帮我们获取对应的文件对象，这里我们仍然使用表单类属性的data属性获取上传文件。
+```python
+@app.route('/upload', methods=['GET', 'POST'])
+def upload():
+    form = UploadForm()
+    if form.validate_on_submit():
+        f = form.photo.data
+        filename = random_filename(f.filename)
+        f.save(os.path.join(app.config['UPLOAD_PATH'], filename))
+        flash('Upload success.')
+        session['filenames'] = [filename]
+        return redirect(url_for('show_images'))
+    return render_template('upload.html', form=form)
+```
+当表单通过验证后，我们通过form.photo.data获取存储上传文件的 FileStorage对象。接下来，我们需要处理文件名，通常有三种处理方式:
+1. 使用原文件名  
+如果能够确定文件的来源安全，可以直接使用原文件名，通过FileStorage对象的filename属性获取:
+```python
+filename = f.filename
+```
+2. 使用过滤后的文件名  
+如果要支持用户上传文件，我们必须对文件名进行处理，因为攻击 者可能会在文件名中加入恶意路径。  
+我们可以使用Werkzeug提供的secure_filename()函数对文件名进行过滤，传递文件名作为参数，它会过滤掉所有危险字符，返回“安全的文件名”。
+```
+>>> from werkzeug import secure_filename
+>>> secure_filename('avatar!@#//#\\%$^&.jpg') 'avatar.jpg'
+>>> secure_filename('avatar头像.jpg') 'avatar.jpg'
+```
+3. 统一重命名  
+secure_filename()函数，会过滤掉文件名中的非ASCII字符。但如果文件名完全由非ASCII字符组成，那么会得到一个空文件名，
+为了避免出现这种情况，更好的做法是使用统一的处理方式对所有上传的文件重新命名。
+随机文件名有很多种方式可以生成，下面是一个使用Python内置的uuid模块生成随机文件名的random_filename()函数:
+```python
+def random_filename(filename):
+   ext = os.path.splitext(filename)[1]
+   new_filename = uuid.uuid4().hex + ext
+   return new_filename
+```
+文件保存后，我们希望能够显示上传后的图片。
+为了让上传后的文件能够通过URL获取，我们还需要创建一个视图函数来返回上传后的文件，如下所示:
+```python
+@app.route('/uploads/<path:filename>')
+def get_file(filename):
+   return send_from_directory(app.config['UPLOAD_PATH'], filename)
+```
+在这个uploads视图中，我们使用Flask提供的send_from_directory()函数来获取文件，传入文件的路径和文件名作为参数。
+在get_file视图的URL规则中，filename变量使用了path转换器以支持传入包含斜线的路径字符串。  
 
+在upload视图里保存文件后，我们使用flash()发送一个提示，将文件名保存到session中，最后重定向到show_images视图。
+show_images视图返回的uploaded.html模板中将从session获取文件名，渲染出上传后的图片。
+```html
+{% extends 'base.html' %}
+{% from 'macros.html' import form_field %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+{% if session.filenames %}
+{% for filename in session.filenames %}
+<a href="{{ url_for('get_file', filename=filename) }}" target="_blank">
+    <img src="{{ url_for('get_file', filename=filename) }}">
+</a>
+{% endfor %}
+{% endif %}
+{% endblock %}
+```
+
+#### 多文件上传
+在客户端，通过在文件上传字段(type=file)加入multiple属性，就可以开启多选:
+```html
+<input type="file" id="file" name="file" multiple>
+```
+创建表单类时，可以直接使用WTForms提供的MultipleFileField字段实现，添加一个DataRequired验证器来确保包含文件:
+```python
+from wtforms import MultipleFileField
+class MultiUploadForm(FlaskForm):
+   photo = MultipleFileField('Upload Image', validators={DataRequired()}
+   submit = SubmitField()
+```
+表单提交时，在服务器端的程序中，对request.files属性调用getlist()方法并传入字段的name属性值会返回包含所有上传文件对象的列表。
+在multi_upload视图中，我们迭代这个列表，然后逐一对文件进行处理。
+```python
+@app.route('/multi-upload', methods=['GET', 'POST'])
+def multi_upload():
+    form = MultiUploadForm()
+
+    if request.method == 'POST':
+        filenames = []
+
+        # check csrf token
+        try:
+            validate_csrf(form.csrf_token.data)
+        except ValidationError:
+            flash('CSRF token error.')
+            return redirect(url_for('multi_upload'))
+
+        photos = request.files.getlist('photo')
+        # check if user has selected files. If not, the browser
+        # will submit an empty file part without filename
+        if not photos[0].filename:
+            flash('No selected file.')
+            return redirect(url_for('multi_upload'))
+
+        for f in photos:
+            # check the file extension
+            if f and allowed_file(f.filename):
+                filename = random_filename(f.filename)
+                f.save(os.path.join(
+                    app.config['UPLOAD_PATH'], filename
+                ))
+                filenames.append(filename)
+            else:
+                flash('Invalid file type.')
+                return redirect(url_for('multi_upload'))
+        flash('Upload success.')
+        session['filenames'] = filenames
+        return redirect(url_for('show_images'))
+    return render_template('upload.html', form=form)
+```
+
+### 单个表单多个提交按钮
+在某些情况下，我们可能需要为一个表单添加多个提交按钮。
+比如在创建文章的表单中添加发布新文章和保存草稿的按钮。
+当用户提交表单时，我们需要在视图函数中根据按下的按钮来做出不同的处理。
+```python
+class NewPostForm(FlaskForm):
+title = StringField('Title', validators=[DataRequired(), Length(1, 50)]) body = TextAreaField('Body', validators=[DataRequired()])
+save = SubmitField('Save') # 保存按钮
+publish = SubmitField('Publish') # 发布按钮
+```
+save表示保存草稿按钮，publish表示发布按钮，正文字段使用TextAreaField字段。  
+当表单数据通过POST请求提交时，Flask会把表单数据解析到request.form字典。
+如果表单中有两个提交字段，那么只有被单击的提交字段才会出现在这个字典中。
+当我们对表单类实例或特定的字段属性调用data属性时，WTForms会对数据做进一步处理。
+对于提交字段的值，它会将其转换为布尔值:被单击的提交字段的值将是True，未被单击的值则是False。
+基于这个机制，我们可以通过提交按钮字段的值来判断当前被单击的按钮。
+```python
+@app.route('/two-submits', methods=['GET', 'POST'])
+def two_submits():
+    form = NewPostForm()
+    if form.validate_on_submit():
+        if form.save.data:
+            # save it...
+            flash('You click the "Save" button.')
+        elif form.publish.data:
+            # publish it...
+            flash('You click the "Publish" button.')
+        return redirect(url_for('index'))
+    return render_template('2submit.html', form=form)
+```
+
+### 单个页面多个表单
+#### 单视图处理
+创建两个表单，并在模板中分别渲染并不是难事，但是当提交某个 表单时，我们就会遇到问题。Flask-WTF根据请求方法判断表单是否提交，
+但并不判断是哪个表单被提交，所以我们需要手动判断。基于上一节介绍的内容，我们知道被单击的提交字段最终的data属性值是布尔值，即True或False。
+而解析后的表单数据使用input字段的name属性值作为键匹配字段数据，也就是说，如果两个表单的提交字段名称都是 submit，
+那么我们也无法判断是哪个表单的提交字段被单击。  
+
+解决问题的第一步就是为两个表单的提交字段设置不同的名称:
+```python
+class SigninForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(1, 20)])
+    password = PasswordField('Password', validators=[DataRequired(), Length(8, 128)])
+    submit1 = SubmitField('Sign in')
+
+class RegisterForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(1, 20)])
+    email = StringField('Email', validators=[DataRequired(), Email(), Length(1, 254)])
+    password = PasswordField('Password', validators=[DataRequired(), Length(8, 128)])
+    submit2 = SubmitField('Register')
+```
+在视图函数中，我们分别实例化这两个表单，根据提交字段的值来区分被提交的表单:
+```python
+@app.route('/multi-form', methods=['GET', 'POST'])
+def multi_form():
+    signin_form = SigninForm()
+    register_form = RegisterForm()
+
+    if signin_form.submit1.data and signin_form.validate():
+        username = signin_form.username.data
+        flash('%s, you just submit the Signin Form.' % username)
+        return redirect(url_for('index'))
+
+    if register_form.submit2.data and register_form.validate():
+        username = register_form.username.data
+        flash('%s, you just submit the Register Form.' % username)
+        return redirect(url_for('index'))
+
+    return render_template('2form.html', signin_form=signin_form, register_form=register_form)
+```
+#### 多视图处理
+在介绍表单处理时，我们在同一个视图函数内处理两类工作:渲染包含表单的模板(GET请求)、处理表单请求(POST请求)。
+如果你想解耦这部分功能，那么也可以分离成两个视图函数处理。当处理多个表单时，我们可以把表单的渲染在单独的视图函数中处理。
+```python
+@app.route('/multi-form-multi-view')
+def multi_form_multi_view():
+    signin_form = SigninForm2()
+    register_form = RegisterForm2()
+    return render_template('2form2view.html', signin_form=signin_form, register_form=register_form)
+```
+这个视图只负责处理GET请求，实例化两个表单类并渲染模板。另外我们再为每一个表单单独创建一个视图函数来处理验证工作。
+处理表单提交请求的视图仅监听POST请求
+```python
+@app.route('/handle-signin', methods=['POST'])
+def handle_signin():
+    signin_form = SigninForm2()
+    register_form = RegisterForm2()
+
+    if signin_form.validate_on_submit():
+        username = signin_form.username.data
+        flash('%s, you just submit the Signin Form.' % username)
+        return redirect(url_for('index'))
+
+    return render_template('2form2view.html', signin_form=signin_form, register_form=register_form)
+
+
+@app.route('/handle-register', methods=['POST'])
+def handle_register():
+    signin_form = SigninForm2()
+    register_form = RegisterForm2()
+
+    if register_form.validate_on_submit():
+        username = register_form.username.data
+        flash('%s, you just submit the Register Form.' % username)
+        return redirect(url_for('index'))
+    return render_template('2form2view.html', signin_form=signin_form, register_form=register_form)
+```
+在HTML中，表单提交请求的目标URL通过action属性设置。为了让表单提交时将请求发送到对应的URL，我们需要设置action属性，如下所示:
+```html
+...
+<h2>Login Form</h2>
+<form method="post" action="{{ url_for('handle_signin') }}">
+... 
+</form>
+<h2>Register Form</h2>
+<form method="post" action="{{ url_for('handle_register') }}">
+...
+</form>
+...
+```
+
+# 数据库
+## ORM
+ORM把底层的SQL数据实体转化成高层的Python对象，ORM主要实现了三层映射关系:
+ * 表→Python类。
+ * 字段(列)→类属性。
+ * 记录(行)→类实例。
+
+比如，我们要创建一个contacts表来存储留言，其中包含用户名称和电话号码两个字段。在SQL中，下面的代码用来创建这个表:
+```
+CREATE TABLE contacts(
+       name varchar(100) NOT NULL,
+       phone_number varchar(32),
+);
+```
+如果使用ORM，我们可以使用类似下面的Python类来定义这个表:
+```python
+from foo_orm import Model, Column, String
+   class Contact(Model):
+       __tablename__ = 'contacts'
+       name = Column(String(100), nullable=False)
+       phone_number = Column(String(32))
+```
+## 使用Flask-SQLAlchemy管理数据库
+要连接数据库服务器，首先要为我们的程序指定数据库URI(Uniform Resource Identifier，统一资源标识符)。
+数据库URI是一串包含各种属性的字符串，其中包含了各种用于连接数据库的信息。
+![p17](p17.png)
+在Flask-SQLAlchemy中，数据库的URI通过配置变量 SQLALCHEMY_DATABASE_URI设置，默认为SQLite内存型数据库 (sqlite:///:memory:)。
+SQLite是基于文件的DBMS，不需要设置数据库服务器，只需要指定数据库文件的绝对路径。
+我们使用app.root_path来定位数据库文件的路径，并将数据库文件命名为data.db。  
+SQLite的数据库URI在Linux或macOS系统下的斜线数量是4个;在 Windows系统下的URI中的斜线数量为3个。内存型数据库的斜线固定为 3个。
+```python
+# SQLite URI compatible
+WIN = sys.platform.startswith('win')
+if WIN:
+    prefix = 'sqlite:///'
+else:
+    prefix = 'sqlite:////'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', prefix + os.path.join(app.root_path, 'data.db'))
+```
+### 定义数据库模型
+```python
+class Note(db.Model):
+   id = db.Column(db.Integer, primary_key=True)
+   body = db.Column(db.Text)
+```
+### 创建数据库和表
+```
+$ flask shell
+>>> from app import db
+>>> db.create_all()
+```
+我们也可以自己实现一个自定义flask命令完成这个工作
+```python
+import click
+...
+@app.cli.command()
+def initdb():
+  db.create_all()   
+  click.echo('Initialized database.')
+```
+```
+$ flask initdb
+Initialized database.
+```
+## 数据库操作
+### CRUD
+#### Create
+```
+>>> from app import db, Note
+>>> note1 = Note(body='remember Sammy Jankis')
+>>> note2 = Note(body='SHAVE')
+>>> note3 = Note(body='DON'T BELIEVE HIS LIES, HE IS THE ONE, KILL HIM')
+>>> db.session.add(note1)
+>>> db.session.add(note2)
+>>> db.session.add(note3)
+>>> db.session.commit()
+```
+#### Read
+一般来说，一个完整的查询遵循下面的模式:  
+```
+<模型类>.query.<过滤方法>.<查询方法>
+```
+SQLAlchemy提供了许多查询方法用来获取记录:  
+![p18](p18.png)
+```
+>>> note1 = Note.query.first()
+>>> note1
+<Note u'remember Sammy Jankis'>
+>>> note1.body
+u'remember Sammy Jankis'
+```
+SQLAlchemy还提供了许多过滤方法，使用这些过滤方法可以获取更精确的查询，比如获取指定字段值的记录。
+![p19](p19.png)
+```
+>>> Note.query.filter(Note.body='SHAVE').first()
+<Note u'SHAVE'>
+
+>>> Note.query.filter_by(body='SHAVE').first()
+<Note u'SHAVE'>
+```
+#### Update
+更新一条记录非常简单，直接赋值给模型类的字段属性就可以改变字段值，然后调用commit()方法提交会话即可。
+```
+>>> note = Note.query.get(2)
+>>> note.body
+u'SHAVE'
+>>> note.body = 'SHAVE LEFT THIGH'
+>>> db.session.commit()
+```
+#### Delete
+删除记录和添加记录很相似，不过要把add()方法换成delete() 方法，最后都需要调用commit()方法提交修改。
+```
+>>> note = Note.query.get(2)
+>>> db.session.delete(note)
+>>> db.session.commit()
+```
