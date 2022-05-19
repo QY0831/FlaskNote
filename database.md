@@ -205,3 +205,93 @@ def delete_note(note_id):
 {% endfor %}
 ```
 ![p20](pics/p20.png)
+
+## 定义关系
+在关系型数据库中，我们可以通过关系让不同表之间的字段建立联系。一般来说，定义关系需要两步，分别是创建外键和定义关系属性。  
+### 配置Python Shell上下文
+在上面的许多操作中，每一次使用flask shell命令启动Python Shell后都要从app模块里导入db对象和相应的模型类。
+我们可以使用app.shell_context_processor装饰器注册一个shell上下文处理函数。
+```python
+@app.shell_context_processor
+def make_shell_context():
+    return dict(db=db, Note=Note) # 等同于{'db': db, 'Note': Note}
+```
+当使用flask shell命令启动Python Shell时，
+所有使用 app.shell_context_processor装饰器注册的shell上下文处理函数都会被自动执行，
+这会将db和Note对象推送到Python Shell上下文里:
+```
+$ flask shell
+>>> db
+<SQLAlchemy engine=sqlite:///Path/to/your/data.db>
+>>> Note
+<class 'app.Note'>
+```
+### 一对多
+一个作者（Author）可以对应多篇文章（Article）。
+![p21](pics/p21.png)
+```python
+# one to many
+class Author(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(20), unique=True)
+    phone = db.Column(db.String(20))
+    articles = db.relationship('Article')  # collection
+
+    def __repr__(self):
+        return '<Author %r>' % self.name
+
+
+class Article(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(50), index=True)
+    body = db.Column(db.Text)
+    author_id = db.Column(db.Integer, db.ForeignKey('author.id'))
+
+    def __repr__(self):
+        return '<Article %r>' % self.title
+```
+relationship()函数的第一个参数 为关系另一侧的模型名称，它会告诉SQLAlchemy将Author类与Article类建立关系。
+当这个关系属性被调用时，SQLAlchemy会找到关系另一侧 (即article表)的外键字段(即author_id)，
+然后反向查询article表中所有author_id值为当前表主键值(即author.id)的记录，返回包含这些记录的列表，
+也就是返回某个作者对应的多篇文章记录。  
+除了给对象直接赋值外，
+通过操作关系属性，将关系属性赋给实际的对象即可建立关系。集合关系属性可以像列表一样操作，调用append()方法来与一个Article对象建立关系:
+```
+>>> foo = Author(name='Foo')
+>>> spam = Article(title='Spam')
+>>> ham = Article(title='Ham')
+>>> db.session.add(foo)
+>>> db.session.add(spam)
+>>> db.session.add(ham)
+>>> foo.articles.append(spam)
+>>> foo.articles.append(ham)
+>>> db.session.commit()
+```
+和append()相对，对关系属性调用remove()方法可以与对应的Aritcle对象解除关系。
+
+## 更新数据库表
+### 重新生成表
+如果你并不在意表中的数据，最简单的方法是使用drop_all()方法删除表以及其中的数据，然后再使用create_all()方法重新创建:
+```
+>>> db.drop_all()
+>>> db.create_all()
+```
+为了方便开发，我们修改initdb命令函数的内容，为其增加一个--drop选项来支持删除表和数据库后进行重建:
+```python
+@app.cli.command()
+@click.option('--drop', is_flag=True, help='Create after drop.')
+def initdb(drop):
+   """Initialize the database."""
+   if drop:
+       click.confirm('This operation will delete the database, do you want to continue?'
+       db.drop_all()
+       click.echo('Drop tables.')
+   db.create_all()
+   click.echo('Initialized database.')
+```
+现在，执行下面的命令会重建数据库和表:
+```
+$ flask initdb --drop
+```
+### 使用Flask-Migrate迁移数据库
+扩展Flask-Migrate集成了Alembic，提供了一些flask命令来简化迁移工作，我们将使用它来迁移数据库。
