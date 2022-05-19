@@ -1,2 +1,3 @@
 # FlaskNote
-test
+## flask basics 
+[a relative link](flask.md)
