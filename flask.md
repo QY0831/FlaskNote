@@ -19,7 +19,7 @@ pipenv install
 pipenv shell
 ```
 
-![p1](p1.png)
+![p1](pics/p1.png)
 
 安装flask:  
 ```
@@ -80,9 +80,9 @@ def greet(name='Programmer'):
 return '<h1>Hello, %s!</h1>' % name
 ```
 # 启动Flask
-![p2](p2.png)
+![p2](pics/p2.png)
 flask run命令默认监听 127.0.0.1:5000 地址。  
-![p3](p3.png)  
+![p3](pics/p3.png)  
 使用flask run命令前，需要提供程序所在位置，flask会自动从两个位置寻找：  
  - 当前目录下寻找app.py和wsgy.py，并从中寻找app或application对象
  - 从环境变量FLASK_APP对应的值寻找名为app或application的程序实例  

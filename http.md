@@ -3,7 +3,7 @@
 ## Request 对象
 请求URL和报文中的其他信息都可以通过Flask的Request对象提供的属性和方法获取。
 URL: http://helloflask.com/hello?name=Grey
-![p4](p4.png)  
+![p4](pics/p4.png)  
 ```python
 from flask import Flask, request
 app = Flask(__name__)
@@ -47,7 +47,7 @@ def hello():
 
 ### URL处理
 app.route()装饰器中可以对传入的变量进行类型转化，当变量无法转化时，会返回404错误响应，间接验证了传入变量类型是否正确。  
-![p5](p5.png) 
+![p5](pics/p5.png) 
 ```python
 @app.route('goback/<int:year>')
 def go_back(year):
@@ -67,7 +67,7 @@ colors = ['blue', 'white', 'red']
 ```
 ### 请求钩子
 请求钩子用于预处理、后处理。  
-![p6](p6.png) 
+![p6](pics/p6.png) 
 
 ```python
 @app.before_request
@@ -80,12 +80,12 @@ def do_something():
 ## HTTP 响应
 响应报文主要由协议版本、状态码(status code)、原因短语 (reason phrase)、响应首部和响应主体组成。
 以发向localhost: 5000/hello的请求为例：  
-![p7](p7.png) 
+![p7](pics/p7.png) 
 
 响应报文的首部包含一些关于响应和服务器的信息，这些内容由Flask生成，而我们在视图函数中返回的内容即为响应报文中的主体内容。
 浏览器接收到响应后，会把返回的响应主体解析并显示在浏览器窗口上。
 常见的HTTP状态码：  
-![p8](p8.png) 
+![p8](pics/p8.png) 
 
 ### 在Flask中生成响应
 Flask会先判断是否可以找到与请求URL相匹配的路由，如果没有则返回404响应。
@@ -164,9 +164,9 @@ Cookie通常被用来进行用户会话管理(比如登录状态)，保存用户
 
 在Flask中，如果想要在响应中添加一个cookie，最方便的方法是使用Response类提供的set_cookie()方法。
 要使用这个方法，我们需要先使用make_response()方法手动生成一个响应对象，传入响应主体作为参数。这个响应对象默认实例化内置的Response类。  
-![p9](p9.png)
+![p9](pics/p9.png)
 set_cookie()方法支持多个参数来设置Cookie的选项:
-![p10](p10.png)
+![p10](pics/p10.png)
 将name变量设置到名为name的cookie中：
 ```python
 from flask import Flask, make_response

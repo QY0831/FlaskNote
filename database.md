@@ -23,7 +23,7 @@ class Contact(Model):
 ## 使用Flask-SQLAlchemy管理数据库
 要连接数据库服务器，首先要为我们的程序指定数据库URI(Uniform Resource Identifier，统一资源标识符)。
 数据库URI是一串包含各种属性的字符串，其中包含了各种用于连接数据库的信息。
-![p17](p17.png)
+![p17](pics/p17.png)
 在Flask-SQLAlchemy中，数据库的URI通过配置变量 SQLALCHEMY_DATABASE_URI设置，默认为SQLite内存型数据库 (sqlite:///:memory:)。
 SQLite是基于文件的DBMS，不需要设置数据库服务器，只需要指定数据库文件的绝对路径。
 我们使用app.root_path来定位数据库文件的路径，并将数据库文件命名为data.db。  
@@ -81,7 +81,7 @@ Initialized database.
 <模型类>.query.<过滤方法>.<查询方法>
 ```
 SQLAlchemy提供了许多查询方法用来获取记录:  
-![p18](p18.png)
+![p18](pics/p18.png)
 ```
 >>> note1 = Note.query.first()
 >>> note1
@@ -90,7 +90,7 @@ SQLAlchemy提供了许多查询方法用来获取记录:
 u'remember Sammy Jankis'
 ```
 SQLAlchemy还提供了许多过滤方法，使用这些过滤方法可以获取更精确的查询，比如获取指定字段值的记录。
-![p19](p19.png)
+![p19](pics/p19.png)
 ```
 >>> Note.query.filter(Note.body='SHAVE').first()
 <Note u'SHAVE'>
@@ -204,4 +204,4 @@ def delete_note(note_id):
 </div>
 {% endfor %}
 ```
-![p20](p20.png)
+![p20](pics/p20.png)

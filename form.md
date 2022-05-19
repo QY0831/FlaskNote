@@ -88,7 +88,7 @@ form.csrf_token字段包含了自动生成的CSRF令牌值，在提交表单后�
 ### 提交表单
 在HTML中，当<form>标签声明的表单中类型为submit的提交字段被单击时，就会创建一个提交表单的HTTP请求，
 请求中包含表单各个字段的数据。表单的提交行为主要由三个属性控制。
-![p15](p15.png)
+![p15](pics/p15.png)
 form标签的action属性用来指定表单被提交的目标URL，默认为当前URL，也就是渲染该模板的路由所在的URL。
 如果你要把表单数据发送到其他URL，可以自定义这个属性值。  
 出于安全的考虑，我们一般使用POST方法提交表单。
@@ -313,7 +313,7 @@ class UploadForm(FlaskForm):
     photo = FileField('Upload Image', validators=[FileRequired(), FileAllowed(['jpg', 'jpeg', 'png', 'gif'])])
     submit = SubmitField()
 ```
-![p16](p16.png)
+![p16](pics/p16.png)
 #### 渲染上传表单
 在新创建的upload视图里，我们实例化表单类UploadForm，然后传入模板:
 ```python
